@@ -35,7 +35,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          claude_args: '--allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*),Bash(gh api:*)"'
+          claude_args: '--allowed-tools "Read,Write,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*),Bash(gh api:*)"'
+
+          # Descomentar para depurar: vuelca la conversación completa de Claude
+          # en el log del run (incluye qué tool fue denegada). Ojo: en repos
+          # públicos ese log es visible para cualquiera.
+          # show_full_output: true
 
           prompt: |
             Estás triageando el issue #${{ github.event.issue.number }} del repo
@@ -136,21 +141,32 @@ jobs:
             ## Paso 5 — Publicar como comentario "sticky" (sin duplicar)
 
             El marcador `<!-- claude-triage -->` en la primera línea es el
-            ancla para detectar un comentario de triage previo. Antes de
-            publicar:
+            ancla para detectar un comentario de triage previo. Sigue estos
+            pasos EXACTOS, sin atajos ni alternativas:
 
-            1. Recorre los comentarios ya leídos en el paso 1 (o
-               `gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments`)
-               buscando uno cuyo body empiece con `<!-- claude-triage -->`.
-            2. Escribe el markdown completo a un archivo temporal (por ejemplo
-               con el tool Write o `cat > /tmp/triage.md <<'EOF' ... EOF`) y
-               publícalo con `--body-file`, nunca con `--body` inline, para no
-               romper tablas ni saltos de línea al pasar por el shell.
-            3. Si NO existe comentario previo:
-               `gh issue comment ${{ github.event.issue.number }} --repo ${{ github.repository }} --body-file /tmp/triage.md`
-            4. Si SÍ existe (tienes su `id`):
-               `gh api --method PATCH repos/${{ github.repository }}/issues/comments/<id> -f body=@/tmp/triage.md`
-               (edita, no crea uno nuevo).
+            1. Escribe el markdown completo con el tool **Write** al archivo
+               `triage-comment.md` en la raíz del repo (ruta relativa, no
+               `/tmp`). Es la única forma permitida de crear el archivo — no
+               uses `cat`, `echo` ni heredocs de shell, están bloqueados.
+            2. Busca un comentario de triage previo con:
+               `gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments --jq '.[] | select(.body | startswith("<!-- claude-triage -->")) | .id'`
+               (ese `id` es el id REST numérico; el de `gh issue view --json comments` es un node id de GraphQL y no sirve aquí).
+            3. Si el comando anterior no devuelve nada (no hay comentario
+               previo):
+               `gh issue comment ${{ github.event.issue.number }} --repo ${{ github.repository }} --body-file triage-comment.md`
+            4. Si devuelve un id (ya existe un comentario de triage):
+               `gh api --method PATCH repos/${{ github.repository }}/issues/comments/<id> -F body=@triage-comment.md`
+               — usa `-F` (mayúscula, lee el archivo), NUNCA `-f` (que
+               mandaría el texto literal `@triage-comment.md` como cuerpo).
+
+            El comentario es el entregable principal de esta tarea — aplicar
+            solo los labels sin publicar o actualizar el comentario es un
+            triage incompleto. Si algún comando de este paso falla o queda
+            denegado, no termines en silencio: intenta una alternativa dentro
+            de las tools permitidas y, si de verdad no se puede, dilo
+            explícitamente en tu resumen final. Antes de terminar, vuelve a
+            listar los comentarios del issue y confirma que existe uno con el
+            marcador `<!-- claude-triage -->`.
 
             No modifiques el body del issue original, no cierres el issue, no
             asignes personas. Tu única salida son los labels y ese comentario.
