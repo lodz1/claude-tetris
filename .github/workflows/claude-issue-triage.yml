@@ -1,0 +1,156 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # No triagear issues abiertos/editados por bots, y no pisar a claude.yml
+    # cuando el issue ya menciona @claude (ese lo atiende el otro workflow).
+    if: |
+      github.event.sender.type != 'Bot' &&
+      !contains(github.event.issue.title, '@claude') &&
+      !contains(github.event.issue.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Issue Triage
+        id: claude-triage
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          claude_args: '--allowed-tools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*),Bash(gh api:*)"'
+
+          prompt: |
+            Estás triageando el issue #${{ github.event.issue.number }} del repo
+            ${{ github.repository }}. El objetivo es dos cosas: (1) aplicarle los
+            labels correctos y (2) publicar un comentario de diagnóstico técnico
+            que sirva como punto de partida para escribir después el fix.
+
+            ## Paso 1 — Leer contexto
+
+            - `gh issue view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json title,body,labels,comments`
+            - `gh label list --repo ${{ github.repository }}` — esta es la lista
+              CERRADA de labels disponibles. No crees labels nuevos bajo ninguna
+              circunstancia; si ninguno encaja bien, usa el más cercano.
+
+            ## Paso 2 — Investigar el código
+
+            Este repo es un Tetris en vanilla JS (`game.js`, `index.html`,
+            `style.css`, sin build ni dependencias). Usa Read/Grep/Glob sobre
+            esos archivos para encontrar las funciones, constantes o líneas
+            concretas relacionadas con lo que pide el issue. No adivines nombres
+            de símbolos: verifícalos leyendo el archivo real. Ejemplos de dónde
+            mirar según el tema del issue: colisiones/rotación/spawn/lock →
+            gameplay; dibujo en canvas, colores, ghost piece → rendering;
+            HTML/CSS/HUD/overlay → ui; teclado/movimiento/drop → controls;
+            puntuación/niveles/velocidad → scoring.
+
+            ## Paso 3 — Elegir labels
+
+            Elige, de la lista cerrada del paso 1:
+            - Exactamente un tipo: `bug`, `enhancement`, `question` o
+              `documentation`.
+            - Exactamente un `area:*` (gameplay/rendering/ui/controls/scoring).
+            - Exactamente un `priority:*` (high/medium/low).
+            - `needs-info` SOLO si el issue no tiene información suficiente
+              para diagnosticar con confianza.
+            - Siempre `triaged`.
+
+            No quites labels que ya haya puesto una persona (labels que no sean
+            de este esquema `area:*`/`priority:*`/`triaged`/`needs-info` déjalos
+            intactos). Aplica con:
+            `gh issue edit ${{ github.event.issue.number }} --repo ${{ github.repository }} --add-label "..."`
+
+            ## Paso 4 — Escribir el diagnóstico
+
+            Redacta el comentario EN ESPAÑOL siguiendo esta plantilla literal,
+            reemplazando el contenido de ejemplo pero manteniendo exactamente
+            esta estructura, encabezados y formato de markdown:
+
+            ```
+            <!-- claude-triage -->
+            ## 🔍 Diagnóstico automático
+
+            **Tipo:** Bug · **Área:** Rendering · **Prioridad:** Baja · **Complejidad:** Trivial
+
+            ### Resumen
+            Dos o tres frases en prosa sobre qué pide el issue. Sin repetir el título.
+
+            ### Ubicación en el código
+            | Archivo | Línea | Símbolo | Por qué importa |
+            | --- | --- | --- | --- |
+            | `game.js` | 24 | `COLORS` | Define el color de cada tetromino por índice |
+
+            ### Causa raíz probable
+            Un párrafo. Si es una feature y no un bug, explica dónde encaja en el flujo actual.
+
+            ### Enfoque propuesto
+            1. Paso concreto.
+            2. Paso concreto.
+
+            ### Riesgos / efectos colaterales
+            - Punto breve, o `Ninguno aparente.`
+
+            ---
+            <sub>Generado por Claude · se actualiza al editar el issue</sub>
+            ```
+
+            Reglas de formato, sin excepción:
+            - La línea `**Tipo:** … · **Área:** … · **Prioridad:** … ·
+              **Complejidad:** …` es una sola línea de metadatos separada por
+              " · ", nunca una tabla ni una lista.
+            - "Ubicación en el código" es SIEMPRE una tabla markdown, una fila
+              por símbolo relevante, máximo 6 filas.
+            - Rutas de archivo, nombres de función y constantes siempre entre
+              backticks.
+            - Nunca incluyas un diff ni un bloque de código con el fix — el
+              diagnóstico es solo análisis, el código se escribe después en otra
+              tarea.
+            - Prosa corta: párrafos de máximo 4 líneas, sin negrita decorativa
+              dentro del texto corrido (la negrita solo en la línea de
+              metadatos).
+            - Si el issue es ambiguo, añade una sección
+              `### ❓ Información faltante` con preguntas concretas en lista, y
+              usa el label `needs-info`.
+            - Si una sección no tiene nada relevante que decir, omítela por
+              completo — no escribas "N/A" ni rellenes.
+            - Complejidad estimada: trivial / pequeña / media / grande.
+
+            ## Paso 5 — Publicar como comentario "sticky" (sin duplicar)
+
+            El marcador `<!-- claude-triage -->` en la primera línea es el
+            ancla para detectar un comentario de triage previo. Antes de
+            publicar:
+
+            1. Recorre los comentarios ya leídos en el paso 1 (o
+               `gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments`)
+               buscando uno cuyo body empiece con `<!-- claude-triage -->`.
+            2. Escribe el markdown completo a un archivo temporal (por ejemplo
+               con el tool Write o `cat > /tmp/triage.md <<'EOF' ... EOF`) y
+               publícalo con `--body-file`, nunca con `--body` inline, para no
+               romper tablas ni saltos de línea al pasar por el shell.
+            3. Si NO existe comentario previo:
+               `gh issue comment ${{ github.event.issue.number }} --repo ${{ github.repository }} --body-file /tmp/triage.md`
+            4. Si SÍ existe (tienes su `id`):
+               `gh api --method PATCH repos/${{ github.repository }}/issues/comments/<id> -f body=@/tmp/triage.md`
+               (edita, no crea uno nuevo).
+
+            No modifiques el body del issue original, no cierres el issue, no
+            asignes personas. Tu única salida son los labels y ese comentario.

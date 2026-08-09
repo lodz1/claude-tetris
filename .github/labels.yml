@@ -1,0 +1,64 @@
+# Documentación versionada de los labels del repositorio.
+# No lo consume ningún workflow (el triage lee los labels reales vía `gh label list`);
+# es la referencia de qué existe y qué significa cada uno.
+
+# Defaults de GitHub (ya existían)
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+- name: documentation
+  color: "0075ca"
+  description: Improvements or additions to documentation
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+- name: enhancement
+  color: "a2eeef"
+  description: New feature or request
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+- name: invalid
+  color: "e4e669"
+  description: This doesn't seem right
+- name: question
+  color: "d876e3"
+  description: Further information is requested
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+
+# Labels del proyecto (para el triage automático de issues)
+- name: "area:gameplay"
+  color: "1D76DB"
+  description: "Lógica del juego: colisiones, rotación, spawn, lock"
+- name: "area:rendering"
+  color: "5319E7"
+  description: "Dibujo en canvas, colores, ghost piece"
+- name: "area:ui"
+  color: "0E8A16"
+  description: "HTML/CSS, HUD, overlay, layout"
+- name: "area:controls"
+  color: "FBCA04"
+  description: "Teclado, movimiento, soft/hard drop"
+- name: "area:scoring"
+  color: "C2E0C6"
+  description: "Puntuación, líneas, niveles, velocidad"
+- name: "priority:high"
+  color: "B60205"
+  description: "Rompe el juego o bloquea al usuario"
+- name: "priority:medium"
+  color: "D93F0B"
+  description: "Molesto pero hay workaround"
+- name: "priority:low"
+  color: "FEF2C0"
+  description: "Cosmético o nice-to-have"
+- name: needs-info
+  color: "D876E3"
+  description: "Falta información para diagnosticar"
+- name: triaged
+  color: "BFDADC"
+  description: "Analizado por Claude"
