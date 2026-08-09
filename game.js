@@ -140,6 +140,7 @@ function softDrop() {
 }
 
 function lockPiece() {
+  if (gameOver) return;
   merge();
   clearLines();
   spawn();
@@ -150,6 +151,7 @@ function spawn() {
   next = randomPiece();
   if (collide(current.shape, current.x, current.y)) {
     endGame();
+    return;
   }
   drawNext();
 }
@@ -198,6 +200,8 @@ function draw() {
     for (let c = 0; c < COLS; c++)
       drawBlock(ctx, c, r, board[r][c], BLOCK);
 
+  if (gameOver) return;
+
   // ghost
   const gy = ghostY();
   for (let r = 0; r < current.shape.length; r++)
@@ -224,7 +228,9 @@ function drawNext() {
 
 function endGame() {
   gameOver = true;
-  cancelAnimationFrame(animId);
+  if (animId !== null) cancelAnimationFrame(animId);
+  animId = null;
+  draw();
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
   overlay.classList.remove('hidden');
@@ -234,7 +240,9 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
+    dropAccum = 0;
     lastTime = performance.now();
+    cancelAnimationFrame(animId);
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
@@ -245,6 +253,8 @@ function togglePause() {
 }
 
 function loop(ts) {
+  if (gameOver || paused) { animId = null; return; }
+
   const dt = ts - lastTime;
   lastTime = ts;
   dropAccum += dt;
@@ -257,6 +267,8 @@ function loop(ts) {
     }
   }
   draw();
+
+  if (gameOver || paused) { animId = null; return; }
   animId = requestAnimationFrame(loop);
 }
 
@@ -281,6 +293,8 @@ themeToggle.addEventListener('change', () => {
 applyTheme(localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark');
 
 function init() {
+  cancelAnimationFrame(animId);
+  animId = null;
   board = createBoard();
   score = 0;
   lines = 0;
@@ -294,7 +308,6 @@ function init() {
   spawn();
   updateHUD();
   overlay.classList.add('hidden');
-  cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
 
